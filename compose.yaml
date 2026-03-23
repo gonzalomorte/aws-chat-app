@@ -1,0 +1,15 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - [cite_start]"5000:5000" [cite: 21]
+    restart: always
+
+  frontend:
+    build: ./frontend
+    ports:
+      - [cite_start]"3000:3000" [cite: 24]
+    environment:
+      - [cite_start]PUBLIC_API_BASE_URL=http://13.221.101.25:5000/ [cite: 64]
+    depends_on:
+      - backend
