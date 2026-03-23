@@ -1,15 +1,17 @@
 services:
   backend:
     build: ./backend
+    image: chat-backend
     ports:
-      - [cite_start]"5000:5000" [cite: 21]
+      - "5000:5000"
     restart: always
 
   frontend:
-    build: ./frontend
+    build: ./frontend 
+    image: chat-frontend
     ports:
-      - [cite_start]"3000:3000" [cite: 24]
+      - "3000:3000"
     environment:
-      - [cite_start]PUBLIC_API_BASE_URL=http://13.221.101.25:5000/ [cite: 64]
+      - PUBLIC_API_BASE_URL=http://3.80.232.124:5000/
     depends_on:
       - backend
