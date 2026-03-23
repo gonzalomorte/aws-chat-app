@@ -1,0 +1,16 @@
+# Logic: Do not track environment-specific variables
+.env
+
+# Logic: Do not track Node.js dependencies
+node_modules/
+npm-debug.log*
+
+# Logic: Do not track Java/Gradle build outputs
+.gradle/
+build/
+bin/
+*.jar
+
+# Logic: System files
+.DS_Store
+Thumbs.db
