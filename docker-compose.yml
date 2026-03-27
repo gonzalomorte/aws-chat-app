@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   backend:
     build: ./backend
@@ -7,11 +9,11 @@ services:
     restart: always
 
   frontend:
-    build: ./frontend 
+    build: ./frontend
     image: chat-frontend
     ports:
       - "3000:3000"
     environment:
-      - PUBLIC_API_BASE_URL=http://3.80.232.124:5000/
+      - PUBLIC_API_BASE_URL=${PUBLIC_API_BASE_URL}
     depends_on:
       - backend
