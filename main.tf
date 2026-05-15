@@ -179,3 +179,124 @@ resource "aws_ecs_service" "backend_svc" {
   depends_on = [aws_lb_listener.backend_listener]
 }
 
+# ==================
+# FRONTEND — Load Balancer, Target Group, Listener
+# ==================
+resource "aws_lb" "frontend_lb" {
+  name                       = "chat-frontend-lb"
+  internal                   = false
+  load_balancer_type         = "application"
+  security_groups            = [aws_security_group.chat_sg.id]
+  subnets                    = module.my_vpc.public_subnets
+  enable_deletion_protection = false
+}
+
+resource "aws_lb_target_group" "frontend_tg" {
+  port        = 3000
+  protocol    = "HTTP"
+  vpc_id      = module.my_vpc.vpc_id
+  target_type = "ip"
+  health_check {
+    path                = "/"
+    protocol            = "HTTP"
+    matcher             = "200"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+  }
+}
+
+resource "aws_lb_listener" "frontend_listener" {
+  load_balancer_arn = aws_lb.frontend_lb.arn
+  port              = 3000
+  protocol          = "HTTP"
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.frontend_tg.arn
+  }
+}
+
+# ==================
+# FRONTEND — ECS Task Definition & Service
+# PUBLIC_API_BASE_URL points to the backend load balancer
+# ==================
+resource "aws_ecs_task_definition" "frontend_task" {
+  family                   = "chat-frontend-task"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  memory                   = "512"
+  cpu                      = "256"
+  task_role_arn            = "arn:aws:iam::048630774961:role/LabRole"
+  execution_role_arn       = "arn:aws:iam::048630774961:role/LabRole"
+
+  container_definitions = <<-EOF
+[
+  {
+    "name": "chat-frontend",
+    "image": "048630774961.dkr.ecr.us-east-1.amazonaws.com/chat-frontend:latest",
+    "memory": 512,
+    "cpu": 256,
+    "essential": true,
+    "portMappings": [
+      {
+        "containerPort": 3000,
+        "hostPort": 3000
+      }
+    ],
+    "environment": [
+      {
+        "name": "PUBLIC_API_BASE_URL",
+        "value": "http://${aws_lb.backend_lb.dns_name}:5000"
+      }
+    ]
+  }
+]
+EOF
+}
+
+resource "aws_ecs_service" "frontend_svc" {
+  name            = "chat-frontend-svc"
+  cluster         = aws_ecs_cluster.chat_cluster.id
+  task_definition = aws_ecs_task_definition.frontend_task.arn
+  launch_type     = "FARGATE"
+  desired_count   = 1
+
+  network_configuration {
+    subnets          = module.my_vpc.public_subnets
+    assign_public_ip = true
+    security_groups  = [aws_security_group.chat_sg.id]
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.frontend_tg.arn
+    container_name   = "chat-frontend"
+    container_port   = 3000
+  }
+
+  depends_on = [
+    aws_lb_listener.frontend_listener,
+    aws_ecs_service.backend_svc
+  ]
+}
+
+# ==================
+# Outputs — useful after apply
+# ==================
+output "frontend_url" {
+  value = "http://${aws_lb.frontend_lb.dns_name}:3000"
+}
+
+output "backend_url" {
+  value = "http://${aws_lb.backend_lb.dns_name}:5000"
+}
+
+output "ecr_backend_url" {
+  value = aws_ecr_repository.chat_backend.repository_url
+}
+
+output "ecr_frontend_url" {
+  value = aws_ecr_repository.chat_frontend.repository_url
+}
+
+
