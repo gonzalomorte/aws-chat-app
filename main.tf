@@ -179,9 +179,9 @@ resource "aws_ecs_service" "backend_svc" {
   depends_on = [aws_lb_listener.backend_listener]
 }
 
-# ====================
+# ==================
 # FRONTEND — Load Balancer, Target Group, Listener
-# ====================
+# ==================
 resource "aws_lb" "frontend_lb" {
   name                       = "chat-frontend-lb"
   internal                   = false
@@ -217,10 +217,10 @@ resource "aws_lb_listener" "frontend_listener" {
   }
 }
 
-# ====================
+# ==================
 # FRONTEND — ECS Task Definition & Service
 # PUBLIC_API_BASE_URL points to the backend load balancer
-# ====================
+# ==================
 resource "aws_ecs_task_definition" "frontend_task" {
   family                   = "chat-frontend-task"
   network_mode             = "awsvpc"
@@ -280,9 +280,9 @@ resource "aws_ecs_service" "frontend_svc" {
   ]
 }
 
-# ====================
+# ==================
 # Outputs — useful after apply
-# ====================
+# ==================
 output "frontend_url" {
   value = "http://${aws_lb.frontend_lb.dns_name}:3000"
 }
@@ -298,3 +298,5 @@ output "ecr_backend_url" {
 output "ecr_frontend_url" {
   value = aws_ecr_repository.chat_frontend.repository_url
 }
+
+
