@@ -9,7 +9,7 @@ REGION="us-east-1"
 ECR_BASE="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 REPO_URL="https://gonzalomorte:TOKEN_REMOVED@github.com/pwr-cloudprogramming/clprog2026-a04-mon1506.git"
 REPO_DIR="clprog2026-a04-mon1506"
-BRANCH="main"   # keep the original spelling if that's what's on remote
+BRANCH="main"
 
 echo "==> Account: ${ACCOUNT_ID}"
 echo "==> ECR base: ${ECR_BASE}"
@@ -70,9 +70,23 @@ echo "==> Pushing frontend to ECR..."
 docker push "${ECR_BASE}/chat-frontend:latest"
 docker push "${ECR_BASE}/chat-frontend:v1"
 
+# ─────────────────────────────────────────────
+# 7. Obtener URL del ALB (requiere haber hecho terraform apply antes)
+# ─────────────────────────────────────────────
+echo ""
+echo "==> Obteniendo URL del ALB..."
+ALB_DNS=$(aws elbv2 describe-load-balancers \
+  --names "chat-alb" \
+  --query "LoadBalancers[0].DNSName" \
+  --output text 2>/dev/null || echo "ALB no encontrado — ejecuta terraform apply primero")
+
 echo ""
 echo "✓ Done! Images pushed:"
 echo "  ${ECR_BASE}/chat-backend:latest"
 echo "  ${ECR_BASE}/chat-backend:v1"
 echo "  ${ECR_BASE}/chat-frontend:latest"
 echo "  ${ECR_BASE}/chat-frontend:v1"
+echo ""
+echo "✓ App URL:"
+echo "  Frontend → http://${ALB_DNS}/"
+echo "  Backend  → http://${ALB_DNS}/chat/all?username=test"

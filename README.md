@@ -16,13 +16,13 @@
 
 The chat application consists of two containers: a **frontend** (Nginx serving a static build, port 3000) and a **backend** (REST API, port 5000). Each container runs as a separate ECS Fargate service, each behind its own Application Load Balancer. The frontend receives `PUBLIC_API_BASE_URL` as an environment variable pointing to the backend load balancer DNS, so the two services communicate via the load balancer rather than directly.
 
-![image-20260516113240605](/mnt/shared/2do_cuatri_erasmus/cloud_programming/lab/lab9/img/image-20260516113240605.png)
+![diagram](img/image-20260516113240605.png)
 
 ## Configuration
 
 ### After `terraform apply`
 
-![image-20260516104911768](/mnt/shared/2do_cuatri_erasmus/cloud_programming/lab/lab9/img/image-20260516104911768.png)
+![diagram](img/image-20260516104911768.png)
 
 ### VPC & Security Group
 
@@ -50,13 +50,13 @@ resource "aws_vpc_security_group_ingress_rule" "allow_backend" {
 }
 ```
 
-![image-20260516105101229](/mnt/shared/2do_cuatri_erasmus/cloud_programming/lab/lab9/img/image-20260516105101229.png)
+![image-20260516105101229](img/image-20260516105101229.png)
 
-![image-20260516105205482](/mnt/shared/2do_cuatri_erasmus/cloud_programming/lab/lab9/img/image-20260516105205482.png)
+![image-20260516105205482](img/image-20260516105205482.png)
 
-![image-20260516105329317](/mnt/shared/2do_cuatri_erasmus/cloud_programming/lab/lab9/img/image-20260516105329317.png)
+![image-20260516105329317](img/image-20260516105329317.png)
 
-![image-20260516105357091](/mnt/shared/2do_cuatri_erasmus/cloud_programming/lab/lab9/img/image-20260516105357091.png)
+![image-20260516105357091](img/image-20260516105357091.png)
 
 ### ECR Repositories
 
@@ -68,7 +68,7 @@ Two separate repositories were created:
 
 Having two repositories reflects the independent lifecycle of each service: the backend and frontend can be versioned, rebuilt, and deployed separately.
 
-![image-20260516105431071](/mnt/shared/2do_cuatri_erasmus/cloud_programming/lab/lab9/img/image-20260516105431071.png)
+![image-20260516105431071](img/image-20260516105431071.png)
 
 ### Shell Script: Clone, Build & Push
 
@@ -89,6 +89,7 @@ docker build -t chat-frontend:latest -t chat-frontend:v1 ./frontend
 ```
 
 **Tagging and pushing** with both `latest` and versioned tags:
+
 ```bash
 docker tag chat-backend:latest "${ECR_BASE}/chat-backend:latest"
 docker push "${ECR_BASE}/chat-backend:latest"
@@ -140,37 +141,37 @@ health_check {
 }
 ```
 
-![image-20260516105550103](/mnt/shared/2do_cuatri_erasmus/cloud_programming/lab/lab9/img/image-20260516105550103.png)
+![image-20260516105550103](img/image-20260516105550103.png)
 
 ## Verification
 
 ### ECR - Images Published
 
-![image-20260516105622941](/mnt/shared/2do_cuatri_erasmus/cloud_programming/lab/lab9/img/image-20260516105622941.png)
+![image-20260516105622941](img/image-20260516105622941.png)
 
-![image-20260516105642424](/mnt/shared/2do_cuatri_erasmus/cloud_programming/lab/lab9/img/image-20260516105642424.png)
+![image-20260516105642424](img/image-20260516105642424.png)
 
 ### ECS Cluster & Running Tasks
 
 Both services show `1/1` Tasks running:
 
-![image-20260516105728883](/mnt/shared/2do_cuatri_erasmus/cloud_programming/lab/lab9/img/image-20260516105728883.png)
+![image-20260516105728883](img/image-20260516105728883.png)
 
-![image-20260516105806092](/mnt/shared/2do_cuatri_erasmus/cloud_programming/lab/lab9/img/image-20260516105806092.png)
+![image-20260516105806092](img/image-20260516105806092.png)
 
-![image-20260516105836500](/mnt/shared/2do_cuatri_erasmus/cloud_programming/lab/lab9/img/image-20260516105836500.png)
+![image-20260516105836500](img/image-20260516105836500.png)
 
 ### Chat App Running via Load Balancer DNS
 
-![image-20260516110454338](/mnt/shared/2do_cuatri_erasmus/cloud_programming/lab/lab9/img/image-20260516110454338.png)
+![image-20260516110454338](img/image-20260516110454338.png)
 
-![image-20260516110556703](/mnt/shared/2do_cuatri_erasmus/cloud_programming/lab/lab9/img/image-20260516110556703.png)
+![image-20260516110556703](img/image-20260516110556703.png)
 
 ### Backend Reachable via Load Balancer DNS
 
 Opening `http://<chat-backend-lb-dns>:5000` directly returns an error page (expected no root route defined).
 
-![image-20260516110658034](/mnt/shared/2do_cuatri_erasmus/cloud_programming/lab/lab9/img/image-20260516110658034.png)
+![image-20260516110658034](img/image-20260516110658034.png)
 
 ## Your Feedback and Reflections
 
