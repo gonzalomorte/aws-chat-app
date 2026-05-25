@@ -53,6 +53,15 @@
 		}
 	};
 
+	const clearChat = async () => {
+		try {
+			await api.delete('/chat');
+			messages = [];
+		} catch (error) {
+			console.error('Error clearing chat:', error);
+		}
+	};
+
 	onMount(() => {
 		fetchAllMessages();
 		const interval = setInterval(fetchNewMessages, 3000); // polling co 3 sekundy
@@ -104,5 +113,11 @@
 		>
 			Send
 		</button>
+		<button
+        	on:click={clearChat}
+        	class="cursor-pointer bg-red-500 hover:bg-red-600 text-white font-semibold px-4 py-2 rounded"
+   		>
+        	Clear
+    	</button>
 	</div>
 </div>

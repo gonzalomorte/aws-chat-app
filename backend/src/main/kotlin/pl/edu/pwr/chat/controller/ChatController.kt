@@ -37,4 +37,10 @@ class ChatController @Autowired constructor(
 
         return ResponseEntity.ok().build()
     }
+
+    @DeleteMapping
+    fun clearMessages(): ResponseEntity<Any> {
+        chatService.clearAllMessages()
+        return ResponseEntity.noContent().build()
+    }
 }

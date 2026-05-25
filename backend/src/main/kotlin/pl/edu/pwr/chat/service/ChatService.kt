@@ -12,4 +12,6 @@ interface ChatService {
 
     fun createLiveEvent(messageDTO: MessageRequestTO)
 
+    fun clearAllMessages()
+
 }

@@ -49,4 +49,9 @@ class ChatServiceImpl @Autowired constructor(
         chatMessageRepository.save(chatMessage)
     }
 
+    override fun clearAllMessages() {
+        chatMessageRepository.deleteAll()
+    }
+
 }
+
