@@ -12,6 +12,9 @@ provider "aws" {
   region = "us-east-1"
 }
 
+# Get the current AWS account ID dynamically
+data "aws_caller_identity" "current" {}
+
 # ====================
 # VPC — subnets públicas (ALB) + privadas (ECS tasks)
 # ====================
@@ -80,6 +83,7 @@ resource "aws_vpc_security_group_ingress_rule" "allow_backend" {
 # ====================
 resource "aws_ecr_repository" "chat_backend" {
   name = "chat-backend"
+  force_delete = true
   image_scanning_configuration {
     scan_on_push = true
   }
@@ -88,6 +92,7 @@ resource "aws_ecr_repository" "chat_backend" {
 
 resource "aws_ecr_repository" "chat_frontend" {
   name = "chat-frontend"
+  force_delete = true
   image_scanning_configuration {
     scan_on_push = true
   }
@@ -184,14 +189,14 @@ resource "aws_ecs_task_definition" "backend_task" {
   requires_compatibilities = ["FARGATE"]
   memory                   = "512"
   cpu                      = "256"
-  task_role_arn            = "arn:aws:iam::048630774961:role/LabRole"
-  execution_role_arn       = "arn:aws:iam::048630774961:role/LabRole"
+  task_role_arn            = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/LabRole"
+  execution_role_arn       = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/LabRole"
 
   container_definitions = <<-EOF
 [
   {
     "name": "chat-backend",
-    "image": "048630774961.dkr.ecr.us-east-1.amazonaws.com/chat-backend:latest",
+    "image": "${aws_ecr_repository.chat_backend.repository_url}:latest",
     "memory": 512,
     "cpu": 256,
     "essential": true,
@@ -238,14 +243,14 @@ resource "aws_ecs_task_definition" "frontend_task" {
   requires_compatibilities = ["FARGATE"]
   memory                   = "512"
   cpu                      = "256"
-  task_role_arn            = "arn:aws:iam::048630774961:role/LabRole"
-  execution_role_arn       = "arn:aws:iam::048630774961:role/LabRole"
+  task_role_arn            = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/LabRole"
+  execution_role_arn       = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/LabRole"
 
   container_definitions = <<-EOF
 [
   {
     "name": "chat-frontend",
-    "image": "048630774961.dkr.ecr.us-east-1.amazonaws.com/chat-frontend:latest",
+    "image": "${aws_ecr_repository.chat_frontend.repository_url}:latest",
     "memory": 512,
     "cpu": 256,
     "essential": true,

@@ -200,3 +200,38 @@ Rather than hardcoding the backend DNS name in the frontend task definition, Ter
 ***Why two tags (`latest` + version) on container images***
 
 Pushing both `:latest` and `:v1` serves different purposes. The `:latest` tag always points to the most recent image, making it convenient as a default for ECS to pull. The `:v1` tag is a immutable reference to that specific build, useful for rollbacks and auditability.
+
+---
+
+# Lab10 Report - Single ALB & Private Subnets Architecture
+
+## Architecture Updates
+
+In this lab, we updated the infrastructure to improve security and optimize resource usage by moving the containers to private subnets and using a single Application Load Balancer (ALB) to route traffic to both services.
+
+### 1. Private Subnets for ECS Tasks
+Both the frontend and backend ECS tasks are now deployed in **private subnets** (`10.0.1.0/24` and `10.0.2.0/24`) and do not have public IP addresses assigned (`assign_public_ip = false`). This ensures that the containers cannot be accessed directly from the internet, significantly reducing the attack surface. They can only receive traffic through the ALB. Outbound internet access (e.g., to pull Docker images from ECR) is provided via a NAT Gateway.
+
+![alt text](img/lab10/lab10_ecsTasksList.png)
+![alt text](img/lab10/lab10_ecsTask1.png)
+![alt text](img/lab10/lab10_ecsTask2.png)
+
+
+### 2. Single Application Load Balancer (ALB)
+Instead of provisioning an ALB for each service, a **single ALB** is deployed in the **public subnets** (`10.0.101.0/24` and `10.0.102.0/24`). This ALB acts as the sole entry point for the application.
+
+![alt text](img/lab10/lab10_loadBalancer.png)
+
+### 3. Path-Based Routing
+To serve both the frontend and the backend from the same ALB, we configured path-based routing rules on the ALB listener (Port 80):
+- **Backend Traffic:** Requests with paths matching `/chat` or `/chat/*` are routed to the backend target group (port 5000).
+- **Frontend Traffic:** All other requests (the default action, `/*`) are routed to the frontend target group (port 3000).
+  
+![alt text](img/lab10/lab10_listenerRules.png)
+
+### 4. Environment Variable Update
+The `PUBLIC_API_BASE_URL` environment variable passed to the frontend task is now simply set to the ALB's DNS name (`http://${aws_lb.chat_alb.dns_name}`). Since the ALB handles the path-based routing, the frontend points to the root of the ALB, and any requests to `/chat/*` made by the frontend will automatically be routed to the backend by the ALB.
+
+![alt text](img/lab10/lab10_terraformOutput.png)
+![alt text](img/lab10/Lab10_testApp.png)
+
