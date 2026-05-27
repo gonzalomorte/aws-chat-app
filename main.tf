@@ -16,7 +16,7 @@ provider "aws" {
 data "aws_caller_identity" "current" {}
 
 # ====================
-# VPC — subnets públicas (ALB) + privadas (ECS tasks)
+# VPC — public subnets (ALB) + private subnets (ECS tasks + RDS)
 # ====================
 module "my_vpc" {
   source          = "terraform-aws-modules/vpc/aws"
@@ -37,7 +37,7 @@ module "my_vpc" {
 }
 
 # ====================
-# Security Group
+# Security Group — ALB, frontend, backend
 # ====================
 resource "aws_security_group" "chat_sg" {
   name        = "chat_sg"
@@ -79,10 +79,61 @@ resource "aws_vpc_security_group_ingress_rule" "allow_backend" {
 }
 
 # ====================
+# Security Group — RDS (only backend ECS tasks via chat_sg can reach port 5432)
+# ====================
+resource "aws_security_group" "rds_sg" {
+  name        = "rds_sg"
+  description = "Allow PostgreSQL access only from backend ECS tasks"
+  vpc_id      = module.my_vpc.vpc_id
+  tags = {
+    Name = "rds-sg"
+  }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "allow_postgres" {
+  security_group_id            = aws_security_group.rds_sg.id
+  ip_protocol                  = "tcp"
+  from_port                    = 5432
+  to_port                      = 5432
+  referenced_security_group_id = aws_security_group.chat_sg.id
+}
+
+resource "aws_vpc_security_group_egress_rule" "rds_allow_all" {
+  security_group_id = aws_security_group.rds_sg.id
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1"
+}
+
+# ====================
+# RDS — PostgreSQL in private subnets
+# ====================
+resource "aws_db_subnet_group" "chat_db" {
+  name       = "chat-db-subnet-group"
+  subnet_ids = module.my_vpc.private_subnets
+}
+
+resource "aws_db_instance" "chat_db" {
+  identifier             = "chat-db"
+  engine                 = "postgres"
+  engine_version         = "15"
+  instance_class         = "db.t3.micro"
+  allocated_storage      = 20
+  db_name                = "chatdb"
+  username               = var.db_username
+  password               = var.db_password
+  db_subnet_group_name   = aws_db_subnet_group.chat_db.name
+  vpc_security_group_ids = [aws_security_group.rds_sg.id]
+  publicly_accessible    = false
+  skip_final_snapshot    = true
+
+  tags = { Name = "chat-db" }
+}
+
+# ====================
 # ECR Repositories
 # ====================
 resource "aws_ecr_repository" "chat_backend" {
-  name = "chat-backend"
+  name         = "chat-backend"
   force_delete = true
   image_scanning_configuration {
     scan_on_push = true
@@ -91,7 +142,7 @@ resource "aws_ecr_repository" "chat_backend" {
 }
 
 resource "aws_ecr_repository" "chat_frontend" {
-  name = "chat-frontend"
+  name         = "chat-frontend"
   force_delete = true
   image_scanning_configuration {
     scan_on_push = true
@@ -107,8 +158,7 @@ resource "aws_ecs_cluster" "chat_cluster" {
 }
 
 # ====================
-# ÚNICO ALB público — subredes públicas
-# / → frontend | /chat/* → backend
+# ALB — / -> frontend | /chat/* -> backend
 # ====================
 resource "aws_lb" "chat_alb" {
   name                       = "chat-alb"
@@ -151,7 +201,6 @@ resource "aws_lb_target_group" "backend_tg" {
   }
 }
 
-# Listener :80 — default → frontend
 resource "aws_lb_listener" "chat_listener" {
   load_balancer_arn = aws_lb.chat_alb.arn
   port              = 80
@@ -163,7 +212,6 @@ resource "aws_lb_listener" "chat_listener" {
   }
 }
 
-# Regla: /chat/* y /api/* → backend
 resource "aws_lb_listener_rule" "chat_rule" {
   listener_arn = aws_lb_listener.chat_listener.arn
   priority     = 10
@@ -181,7 +229,8 @@ resource "aws_lb_listener_rule" "chat_rule" {
 }
 
 # ====================
-# BACKEND — Task Definition & Service en subred PRIVADA
+# BACKEND — Task Definition & Service (private subnet)
+# DB connection injected as environment variables from RDS outputs
 # ====================
 resource "aws_ecs_task_definition" "backend_task" {
   family                   = "chat-backend-task"
@@ -192,31 +241,38 @@ resource "aws_ecs_task_definition" "backend_task" {
   task_role_arn            = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/LabRole"
   execution_role_arn       = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/LabRole"
 
-  container_definitions = <<-EOF
-[
-  {
-    "name": "chat-backend",
-    "image": "${aws_ecr_repository.chat_backend.repository_url}:latest",
-    "memory": 512,
-    "cpu": 256,
-    "essential": true,
-    "portMappings": [
-      {
-        "containerPort": 5000,
-        "hostPort": 5000
-      }
-    ]
-  }
-]
-EOF
+  container_definitions = jsonencode([
+    {
+      name      = "chat-backend"
+      image     = "${aws_ecr_repository.chat_backend.repository_url}:latest"
+      memory    = 512
+      cpu       = 256
+      essential = true
+      portMappings = [
+        {
+          containerPort = 5000
+          hostPort      = 5000
+        }
+      ]
+      environment = [
+        { name = "DB_HOST", value = aws_db_instance.chat_db.address },
+        { name = "DB_NAME", value = "chatdb" },
+        { name = "DB_USER", value = var.db_username },
+        { name = "DB_PASSWORD", value = var.db_password }
+      ]
+    }
+  ])
+
+  depends_on = [aws_db_instance.chat_db]
 }
 
 resource "aws_ecs_service" "backend_svc" {
-  name            = "chat-backend-svc"
-  cluster         = aws_ecs_cluster.chat_cluster.id
-  task_definition = aws_ecs_task_definition.backend_task.arn
-  launch_type     = "FARGATE"
-  desired_count   = 1
+  name                   = "chat-backend-svc"
+  cluster                = aws_ecs_cluster.chat_cluster.id
+  task_definition        = aws_ecs_task_definition.backend_task.arn
+  launch_type            = "FARGATE"
+  desired_count          = 1
+  enable_execute_command = true
 
   network_configuration {
     subnets          = module.my_vpc.private_subnets
@@ -230,12 +286,12 @@ resource "aws_ecs_service" "backend_svc" {
     container_port   = 5000
   }
 
-  depends_on = [aws_lb_listener_rule.chat_rule] # fix: era api_rule
+  depends_on = [aws_lb_listener_rule.chat_rule]
 }
 
 # ====================
-# FRONTEND — Task Definition & Service en subred PRIVADA
-# PUBLIC_API_BASE_URL apunta al ALB — el frontend concatena /chat/...
+# FRONTEND — Task Definition & Service (private subnet)
+# PUBLIC_API_BASE_URL points to ALB — frontend appends /chat/...
 # ====================
 resource "aws_ecs_task_definition" "frontend_task" {
   family                   = "chat-frontend-task"
@@ -246,29 +302,24 @@ resource "aws_ecs_task_definition" "frontend_task" {
   task_role_arn            = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/LabRole"
   execution_role_arn       = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/LabRole"
 
-  container_definitions = <<-EOF
-[
-  {
-    "name": "chat-frontend",
-    "image": "${aws_ecr_repository.chat_frontend.repository_url}:latest",
-    "memory": 512,
-    "cpu": 256,
-    "essential": true,
-    "portMappings": [
-      {
-        "containerPort": 3000,
-        "hostPort": 3000
-      }
-    ],
-    "environment": [
-      {
-        "name": "PUBLIC_API_BASE_URL",
-        "value": "http://${aws_lb.chat_alb.dns_name}"
-      }
-    ]
-  }
-]
-EOF
+  container_definitions = jsonencode([
+    {
+      name      = "chat-frontend"
+      image     = "${aws_ecr_repository.chat_frontend.repository_url}:latest"
+      memory    = 512
+      cpu       = 256
+      essential = true
+      portMappings = [
+        {
+          containerPort = 3000
+          hostPort      = 3000
+        }
+      ]
+      environment = [
+        { name = "PUBLIC_API_BASE_URL", value = "http://${aws_lb.chat_alb.dns_name}" }
+      ]
+    }
+  ])
 }
 
 resource "aws_ecs_service" "frontend_svc" {
@@ -300,7 +351,7 @@ resource "aws_ecs_service" "frontend_svc" {
 # Outputs
 # ====================
 output "app_url" {
-  description = "Punto de entrada unico: / -> frontend, /chat/* -> backend"
+  description = "Single entry point: / -> frontend, /chat/* -> backend"
   value       = "http://${aws_lb.chat_alb.dns_name}"
 }
 
@@ -311,3 +362,9 @@ output "ecr_backend_url" {
 output "ecr_frontend_url" {
   value = aws_ecr_repository.chat_frontend.repository_url
 }
+
+output "rds_host" {
+  description = "RDS endpoint — use to run init.sql from inside the VPC"
+  value       = aws_db_instance.chat_db.address
+}
+
