@@ -155,6 +155,105 @@ resource "aws_ecr_repository" "chat_frontend" {
 # ====================
 resource "aws_ecs_cluster" "chat_cluster" {
   name = "chat-cluster"
+
+  setting {
+    name  = "containerInsights"
+    value = "enabled"
+  }
+}
+
+# ====================
+# CloudWatch Monitoring
+# ====================
+resource "aws_sns_topic" "monitoring_alerts" {
+  name = "chat-monitoring-alerts"
+}
+
+resource "aws_sns_topic_subscription" "monitoring_email" {
+  topic_arn = aws_sns_topic.monitoring_alerts.arn
+  protocol  = "email"
+  endpoint  = var.notification_email
+}
+
+locals {
+  ecs_services = {
+    backend  = aws_ecs_service.backend_svc.name
+    frontend = aws_ecs_service.frontend_svc.name
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "cpu_high" {
+  for_each = local.ecs_services
+
+  alarm_name          = "${each.key}-cpu-high"
+  alarm_description   = "Triggers when the ${each.key} ECS service CPU utilization is above ${var.cpu_high_threshold}%"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 2
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/ECS"
+  period              = 60
+  statistic           = "Average"
+  threshold           = var.cpu_high_threshold
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    ClusterName = aws_ecs_cluster.chat_cluster.name
+    ServiceName = each.value
+  }
+
+  alarm_actions = [aws_sns_topic.monitoring_alerts.arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "all_tasks_stopped" {
+  alarm_name          = "chat-all-tasks-stopped"
+  alarm_description   = "Triggers when the total number of running ECS tasks in this application drops to zero"
+  comparison_operator = "LessThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  threshold           = 0
+  treat_missing_data  = "breaching"
+
+  metric_query {
+    id          = "backend_running_tasks"
+    return_data = false
+
+    metric {
+      metric_name = "RunningTaskCount"
+      namespace   = "AWS/ECS"
+      period      = 60
+      stat        = "Average"
+
+      dimensions = {
+        ClusterName = aws_ecs_cluster.chat_cluster.name
+        ServiceName = aws_ecs_service.backend_svc.name
+      }
+    }
+  }
+
+  metric_query {
+    id          = "frontend_running_tasks"
+    return_data = false
+
+    metric {
+      metric_name = "RunningTaskCount"
+      namespace   = "AWS/ECS"
+      period      = 60
+      stat        = "Average"
+
+      dimensions = {
+        ClusterName = aws_ecs_cluster.chat_cluster.name
+        ServiceName = aws_ecs_service.frontend_svc.name
+      }
+    }
+  }
+
+  metric_query {
+    id          = "total_running_tasks"
+    expression  = "backend_running_tasks + frontend_running_tasks"
+    label       = "TotalRunningTasks"
+    return_data = true
+  }
+
+  alarm_actions = [aws_sns_topic.monitoring_alerts.arn]
 }
 
 # ====================
