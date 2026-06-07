@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # ─────────────────────────────────────────────
 # CONFIGURATION
 # ─────────────────────────────────────────────
@@ -69,23 +71,7 @@ docker push "${ECR_BASE}/chat-frontend:latest"
 docker push "${ECR_BASE}/chat-frontend:v1"
 
 # ─────────────────────────────────────────────
-# 7. Create database table directly on RDS (BEFORE starting services)
-# ─────────────────────────────────────────────
-echo "==> Creating database table on RDS..."
-RDS_HOST=$(cd "$SCRIPT_DIR" && terraform output -raw rds_host 2>/dev/null || echo "")
-
-if [ -z "$RDS_HOST" ]; then
-  echo "WARNING: Could not read rds_host from terraform output"
-else
-  # Use docker to create table (no SessionManagerPlugin needed)
-  docker run --rm postgres:15 \
-    psql "postgresql://${DB_USERNAME}:${DB_PASSWORD}@${RDS_HOST}:5432/chatdb" \
-    -c "CREATE TABLE IF NOT EXISTS chat_message (id BIGSERIAL PRIMARY KEY, username VARCHAR(100) NOT NULL, message TEXT NOT NULL, timestamp TIMESTAMP NOT NULL);" \
-    && echo "==> Database table created" || echo "WARNING: Could not create table"
-fi
-
-# ─────────────────────────────────────────────
-# 8. Force ECS to redeploy with the new images
+# 7. Force ECS to redeploy with the new images
 # ─────────────────────────────────────────────
 echo "==> Forcing ECS redeployment..."
 aws ecs update-service --cluster chat-cluster --service chat-backend-svc  --force-new-deployment --region "$REGION" > /dev/null
@@ -95,7 +81,7 @@ echo "==> Waiting for backend service to stabilise (this takes ~2 min)..."
 aws ecs wait services-stable --cluster chat-cluster --services chat-backend-svc --region "$REGION"
 
 # ─────────────────────────────────────────────
-# 9. Print URLs
+# 8. Print URLs
 # ─────────────────────────────────────────────
 echo ""
 ALB_DNS=$(aws elbv2 describe-load-balancers   --names "chat-alb"   --query "LoadBalancers[0].DNSName"   --output text 2>/dev/null || echo "ALB not found — run terraform apply first")
