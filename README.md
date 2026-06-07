@@ -1,205 +1,117 @@
-## Lab 11 - Persistent Chat with RDS PostgreSQL
+# Lab 12 - ECS Chat Application with RDS and CloudWatch
 
-This section documents the infrastructure and code changes introduced in Lab 11: adding a managed PostgreSQL database (Amazon RDS) to persist chat messages across container restarts.
+This laboratory deploys a chat application on AWS using Terraform. The stack runs the frontend and backend on ECS Fargate, stores chat data in PostgreSQL on RDS, exposes the app through a single Application Load Balancer, and sends CloudWatch alarms by e-mail.
 
-***
+## Architecture
 
-### Architecture Overview
+The application uses the following AWS services:
 
-The diagram below shows the full AWS topology. The key addition compared to Lab 4 is the RDS instance placed in a **private subnet**, reachable only from the backend ECS tasks.
+- VPC with public and private subnets
+- Application Load Balancer for public access
+- Two ECS Fargate services, one for the frontend and one for the backend
+- Amazon ECR repositories for container images
+- Amazon RDS PostgreSQL for persistence
+- Amazon SNS and CloudWatch alarms for monitoring
 
-![image-20260527205354607](img/2026-05-27_20-54.png)
+The topology is summarized in the diagram below:
 
-***
+![Application topology](img/topology.png)
 
-### Terraform
+Traffic flow:
 
-**Private subnet for RDS**
+- `/` routes to the frontend service
+- `/chat` and `/chat/*` route to the backend service
+- The backend connects to RDS in private subnets
+- ECS tasks use the private subnets and a NAT Gateway for outbound access
 
-RDS is placed in a dedicated DB subnet group spanning two private subnets. The critical part is that these subnets have **no route to an internet gateway**, making the database unreachable from outside the VPC:
+## Terraform Resources
 
-```hcl
-resource "aws_db_subnet_group" "chat_db" {
-  subnet_ids = module.my_vpc.private_subnets
-}
+The infrastructure is defined entirely in Terraform:
 
-resource "aws_db_instance" "chat_db" {
-  publicly_accessible  = false   # no public endpoint
-  db_subnet_group_name = aws_db_subnet_group.chat_db.name
-  ...
-}
+- `main.tf` creates the VPC, security groups, RDS database, ECR repositories, ECS cluster, task definitions, services, load balancer, SNS topic, and CloudWatch alarms.
+- `variables.tf` defines the input values used by the deployment.
+
+The key resources are:
+
+- `aws_db_instance.chat_db` for the PostgreSQL database
+- `aws_ecs_cluster.chat_cluster` for the ECS cluster
+- `aws_ecs_service.backend_svc` and `aws_ecs_service.frontend_svc` for the running application
+- `aws_lb.chat_alb` for the public entry point
+- `aws_sns_topic.monitoring_alerts` for alarm notifications
+- `aws_cloudwatch_metric_alarm.cpu_high` for CPU alarms
+- `aws_cloudwatch_metric_alarm.all_tasks_stopped` for the stopped-tasks alarm
+
+## Monitoring With CloudWatch
+
+CloudWatch monitoring is configured for the two ECS services in the application.
+
+### CPU alarm
+
+CPU alarms are created for both the backend and the frontend service. The threshold is controlled by the Terraform input variable `cpu_high_threshold`.
+
+When the CPU utilization of either service stays above the threshold, CloudWatch sends an e-mail through the SNS topic.
+
+### Tasks stopped alarm
+
+The `chat-all-tasks-stopped` alarm watches the running task count of both ECS services. If the total number of running tasks drops to zero, CloudWatch sends an e-mail alert.
+
+### E-mail notifications
+
+Notifications are delivered through an SNS topic with an e-mail subscription. The first deployment creates the subscription, but the recipient must confirm it from the e-mail AWS sends.
+
+## Input Variables
+
+The deployment expects these variables:
+
+- `db_username`: PostgreSQL master username
+- `db_password`: PostgreSQL master password
+- `notification_email`: e-mail address that receives CloudWatch notifications
+- `cpu_high_threshold`: CPU percentage used by the CloudWatch alarm
+
+The CPU threshold is validated to stay between 1 and 100.
+
+## Deploying The Stack
+
+1. Initialize Terraform:
+
+```bash
+terraform init
 ```
 
-**Security Group - backend-only access**
+2. Apply the stack with your values:
 
-Instead of allowing a CIDR range, the RDS security group references the backend's security group directly. This means only ECS tasks belonging to `aws_security_group.chat_sg` can connect on port 5432 — regardless of their IP address:
-
-```hcl
-resource "aws_security_group" "rds_sg" {
-  ingress {
-    from_port                = 5432
-    to_port                  = 5432
-    protocol                 = "tcp"
-    source_security_group_id = aws_security_group.chat_sg.id
-  }
-}
+```bash
+terraform apply \
+  -var="db_username=admin" \
+  -var="db_password=<secret>" \
+  -var="notification_email=<your-email@example.com>" \
+  -var="cpu_high_threshold=75"
 ```
 
-Using `source_security_group_id` instead of `cidr_blocks` is more secure: access follows the identity of the resource, not its IP. This also works correctly with auto-scaling and task replacements.
-
-**RDS credentials via environment variables**
-
-The DB password is never hardcoded. It is passed as a Terraform variable and injected into the ECS task definition as an environment variable, which Spring Boot reads at startup:
-
-```hcl
-environment = [
-  { name = "DB_HOST",     value = aws_db_instance.chat_db.address },
-  { name = "DB_PASSWORD", value = var.db_password }
-]
-```
-
-***
-
-### Database Schema
-
-The database contains one table that stores all chat messages:
-
-```
-┌─────────────────────────────────────────────────────┐
-│                   chat_message                      │
-├──────────────┬──────────────┬────────────────────── │
-│ Column       │ Type         │ Constraints           │
-├──────────────┼──────────────┼───────────────────────│
-│ id           │ BIGSERIAL    │ PRIMARY KEY           │
-│ username     │ VARCHAR(100) │ NOT NULL              │
-│ message      │ TEXT         │ NOT NULL              │
-│ timestamp    │ TIMESTAMP    │ NOT NULL              │
-└──────────────┴──────────────┴───────────────────────┘
-```
-
-`BIGSERIAL` provides auto-incrementing IDs. The `timestamp` column allows messages to be loaded in chronological order. The table is created by `db/init.sql` and validated on startup via `spring.jpa.hibernate.ddl-auto=validate`.
-
-***
-
-### How Database Content Changes
-
-| Operation         | HTTP Endpoint              | When triggered                  | SQL effect                                                   |
-| ----------------- | -------------------------- | ------------------------------- | ------------------------------------------------------------ |
-| **Store message** | `POST /chat`               | User sends a chat message       | `INSERT INTO chat_message (username, message, timestamp) VALUES (...)` |
-| **Load messages** | `GET /chat/all?username=X` | Page load or reconnect          | `SELECT * FROM chat_message ORDER BY timestamp ASC`          |
-| **Clear chat**    | `DELETE /chat`             | User clicks "Clear Chat" button | `DELETE FROM chat_message`                                   |
-
-**Store** - every new message sent by any user is immediately persisted via `chatMessageRepository.save(entity)`. Spring Data JPA maps the Kotlin entity to a row in `chat_message`.
-
-**Retrieve** - on page load the frontend calls `GET /chat/all`, which calls `chatMessageRepository.findAll(Sort.by("timestamp"))`. This returns all stored messages in chronological order so the chat history is restored after restarts or new user connections.
-
-**Delete** - the new `DELETE /chat` endpoint calls `chatMessageRepository.deleteAll()`, which issues a `DELETE FROM chat_message` truncating the entire table. The frontend "Clear Chat" button triggers this endpoint and also clears the local UI state.
-
-***
-
-### Frontend - Clear Chat Button
-
-A single button was added to the chat UI. On click it calls the backend `DELETE /chat` endpoint and clears the rendered message list:
-
-```javascript
-async function clearChat() {
-  await fetch(`${API_BASE}/chat`, { method: 'DELETE' });
-  messages = [];
-}
-```
-
-The button is only visible to connected users and gives immediate feedback by emptying the UI before the next poll cycle.
-
-***
-
-## Architecture Overview
-
-The chat application runs two ECS Fargate services: a **SvelteKit frontend** (port 3000) and a **Spring Boot backend** (port 5000)  in **private subnets**, behind a **single Application Load Balancer** that routes traffic by URL path:
-
-| Path pattern       | Routed to                                  |
-| ------------------ | ------------------------------------------ |
-| `/` (default)      | Frontend target group → ECS task port 3000 |
-| `/chat`, `/chat/*` | Backend target group → ECS task port 5000  |
-
-Users only ever see one public endpoint: `http://<chat-alb-dns>`. The backend is never directly exposed. A **NAT Gateway** (in the public subnet) provides outbound-only Internet access from  private subnets, which ECS tasks need to pull images from ECR.
-
-***
-
-## Configuration Steps
-
-## 1. Prerequisites
-
-- AWS CLI configured with a profile that has sufficient IAM permissions
-- Terraform ≥ 1.2.0
-- Docker installed (Cloud9 IDE recommended)
-
-## 2. Deploy Infrastructure
-
-```
-bashterraform init
-terraform apply -var="db_username=admin" -var="db_password=<secret>"
-```
-
-Take note of the outputs:
-
-```
-textapp_url          = "http://<chat-alb-dns>"     # single public entry point
-ecr_backend_url  = "<account>.dkr.ecr.us-east-1.amazonaws.com/chat-backend"
-ecr_frontend_url = "<account>.dkr.ecr.us-east-1.amazonaws.com/chat-frontend"
-rds_host         = "<rds-endpoint>.rds.amazonaws.com"
-```
-
-## 3. Build & Push Images
-
-Run the shell script to clone, build, and push both images to ECR:
+3. Build and push the container images to ECR:
 
 ```bash
 bash build_and_push.sh
 ```
 
-The script handles three steps:
+4. Confirm the SNS subscription from the e-mail AWS sends to `notification_email`.
 
-**ECR authentication** (token valid for 12 hours):
+After the deployment finishes, Terraform prints the application URL and the ECR repository URLs.
 
-```bash
-aws ecr get-login-password --region "$REGION" \
-  | docker login --username AWS --password-stdin "$ECR_BASE"
-```
+## Database Schema
 
-**Build both images**:
+The PostgreSQL database stores chat messages in a single table with these columns:
 
-```bash
-docker build -t chat-backend:latest -t chat-backend:v1 ./backend
-docker build -t chat-frontend:latest -t chat-frontend:v1 ./frontend
-```
+- `id`
+- `username`
+- `message`
+- `timestamp`
 
-**Tag and push** (the `:v1` push is fast — layers are already cached from `:latest`):
+The schema is created by `init.sql` and is used by the backend to persist messages across container restarts.
 
-```bash
-docker tag chat-backend:latest "${ECR_BASE}/chat-backend:latest"
-docker push "${ECR_BASE}/chat-backend:latest"
-docker push "${ECR_BASE}/chat-backend:v1"
-# same for frontend
-```
+## Result
 
-***
+After deployment, the application is reachable through the ALB, chat data persists in RDS, and CloudWatch sends e-mail alerts when:
 
-## Chat App, Backend & Database Verified
-
-![image-20260527214139232](img/image-20260527214139232.png)
-
-***
-
-## Author Contributions
-
-| Task                                             | Gonzalo Morte Gómez | Jose Daniel Moya Moreno |
-| ------------------------------------------------ | ------------------- | ----------------------- |
-| Terraform setup (VPC, subnets, NAT Gateway)      |                     | X                       |
-| Security Groups (chat_sg, rds_sg)                |                     | X                       |
-| ECR repository creation (frontend, backend)      |                     | X                       |
-| Docker build & push to ECR (shell script)        | X                   |                         |
-| ECS Cluster, Task Definitions & Services         | X                   |                         |
-| ALB, Listener, Routing Rules & Target Groups     |                     | X                       |
-| RDS PostgreSQL (private subnet, DB subnet group) | X                   |                         |
-| README                                           | X                   | X                       |
-
+- the CPU load of either ECS service exceeds the configured threshold
+- all application tasks stop running

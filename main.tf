@@ -204,6 +204,28 @@ resource "aws_cloudwatch_metric_alarm" "cpu_high" {
   alarm_actions = [aws_sns_topic.monitoring_alerts.arn]
 }
 
+resource "aws_cloudwatch_metric_alarm" "memory_high" {
+  for_each = local.ecs_services
+
+  alarm_name          = "${each.key}-memory-high"
+  alarm_description   = "Triggers when the ${each.key} ECS service memory utilization is above 80%"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 2
+  metric_name         = "MemoryUtilization"
+  namespace           = "AWS/ECS"
+  period              = 60
+  statistic           = "Average"
+  threshold           = 80
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    ClusterName = aws_ecs_cluster.chat_cluster.name
+    ServiceName = each.value
+  }
+
+  alarm_actions = [aws_sns_topic.monitoring_alerts.arn]
+}
+
 resource "aws_cloudwatch_metric_alarm" "all_tasks_stopped" {
   alarm_name          = "chat-all-tasks-stopped"
   alarm_description   = "Triggers when the total number of running ECS tasks in this application drops to zero"
