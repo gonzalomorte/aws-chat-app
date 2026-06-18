@@ -2,6 +2,7 @@
 	import { onMount, afterUpdate } from 'svelte';
 	import api from '$lib/api';
 	import type { Message } from '$lib/types/Message';
+	import { env } from '$env/dynamic/public';
 
 	let username: string = 'User' + Math.floor(Math.random() * 1000);
 	let newMessage: string = '';
@@ -44,7 +45,22 @@
 	const sendMessage = async () => {
 		if (!newMessage.trim()) return;
 		try {
-			await api.post('/chat', { username, message: newMessage });
+			const messageToSend = newMessage;
+			await api.post('/chat', { username, message: messageToSend });
+			
+			// Lambda trigger logic
+			const targetWord = "ALERT";
+			if (messageToSend.toUpperCase().includes(targetWord) && env.PUBLIC_LAMBDA_URL) {
+				fetch(env.PUBLIC_LAMBDA_URL, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ 
+						message: messageToSend, 
+						timestamp: new Date().toISOString() 
+					})
+				}).catch(err => console.error('Failed to trigger lambda alert:', err));
+			}
+
 			newMessage = '';
 			await fetchAllMessages();
 			scrollToBottom();
