@@ -1,8 +1,6 @@
 #!/bin/bash
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 # ─────────────────────────────────────────────
 # CONFIGURATION
 # ─────────────────────────────────────────────
@@ -11,7 +9,7 @@ REGION="us-east-1"
 ECR_BASE="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 REPO_URL="https://gonzalomorte:TOKEN_REMOVED@github.com/pwr-cloudprogramming/clprog2026-a04-mon1506.git"
 REPO_DIR="clprog2026-a04-mon1506"
-TAG="lab11_db" # Target for lab 11
+TAG="lab13" # Target for lab 13
 
 echo "==> Account: ${ACCOUNT_ID}"
 echo "==> ECR base: ${ECR_BASE}"

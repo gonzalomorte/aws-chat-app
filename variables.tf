@@ -24,3 +24,9 @@ variable "cpu_high_threshold" {
     error_message = "cpu_high_threshold must be between 1 and 100."
   }
 }
+
+variable "alert_email" {
+  type        = string
+  description = "E-mail address that receives chat alerts via SNS"
+}
+

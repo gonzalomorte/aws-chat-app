@@ -437,7 +437,8 @@ resource "aws_ecs_task_definition" "frontend_task" {
         }
       ]
       environment = [
-        { name = "PUBLIC_API_BASE_URL", value = "http://${aws_lb.chat_alb.dns_name}" }
+        { name = "PUBLIC_API_BASE_URL", value = "http://${aws_lb.chat_alb.dns_name}" },
+        { name = "PUBLIC_LAMBDA_URL", value = aws_lambda_function_url.chat_alert_url.function_url }
       ]
     }
   ])
@@ -487,5 +488,57 @@ output "ecr_frontend_url" {
 output "rds_host" {
   description = "RDS endpoint — use to run init.sql from inside the VPC"
   value       = aws_db_instance.chat_db.address
+}
+
+# ====================
+# Chat Alert SNS & Lambda
+# ====================
+resource "aws_sns_topic" "chat_alerts" {
+  name = "chat-keyword-alerts"
+}
+
+resource "aws_sns_topic_subscription" "chat_alerts_email" {
+  topic_arn = aws_sns_topic.chat_alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
+}
+
+data "archive_file" "lambda_alert_zip" {
+  type        = "zip"
+  source_file = "${path.module}/lambda/alert.py"
+  output_path = "${path.module}/lambda_function_payload.zip"
+}
+
+resource "aws_lambda_function" "chat_alert_lambda" {
+  filename         = data.archive_file.lambda_alert_zip.output_path
+  function_name    = "chat_alert_handler"
+  role             = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/LabRole"
+  handler          = "alert.lambda_handler"
+  runtime          = "python3.9"
+  source_code_hash = data.archive_file.lambda_alert_zip.output_base64sha256
+
+  environment {
+    variables = {
+      SNS_TOPIC_ARN = aws_sns_topic.chat_alerts.arn
+    }
+  }
+}
+
+resource "aws_lambda_function_url" "chat_alert_url" {
+  function_name      = aws_lambda_function.chat_alert_lambda.function_name
+  authorization_type = "NONE"
+
+  cors {
+    allow_credentials = true
+    allow_origins     = ["*"]
+    allow_methods     = ["*"]
+    allow_headers     = ["date", "keep-alive", "content-type", "x-amz-date", "authorization"]
+    expose_headers    = ["keep-alive", "date"]
+    max_age           = 86400
+  }
+}
+
+output "lambda_alert_url" {
+  value = aws_lambda_function_url.chat_alert_url.function_url
 }
 
