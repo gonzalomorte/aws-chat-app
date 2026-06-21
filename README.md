@@ -21,7 +21,7 @@ Traffic flow:
 - `/` routes to the frontend service
 - `/chat` and `/chat/*` route to the backend service
 - The backend connects to RDS in private subnets
-- ECS tasks use the private subnets and a NAT Gateway for outbound access
+- ECS tasks use the private subnets and VPC endpoints for outbound access to AWS services
 - When a configured keyword is present in a chat message, the frontend sends the full message to the Lambda function URL
 - The Lambda function publishes the alert to SNS, and SNS delivers it by e-mail
 

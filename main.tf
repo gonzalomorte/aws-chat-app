@@ -14,9 +14,11 @@ provider "aws" {
 
 # Get the current AWS account ID dynamically
 data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
 
 # ====================
 # VPC — public subnets (ALB) + private subnets (ECS tasks + RDS)
+# Private access is provided through VPC endpoints instead of NAT.
 # ====================
 module "my_vpc" {
   source          = "terraform-aws-modules/vpc/aws"
@@ -26,14 +28,102 @@ module "my_vpc" {
   public_subnets  = ["10.0.101.0/24", "10.0.102.0/24"]
   private_subnets = ["10.0.1.0/24", "10.0.2.0/24"]
 
-  enable_nat_gateway     = true
-  single_nat_gateway     = true
+  enable_nat_gateway     = false
+  single_nat_gateway     = false
   one_nat_gateway_per_az = false
 
   tags = {
     Terraform   = "true"
     Environment = "dev"
   }
+}
+
+# ====================
+# VPC Endpoints — private access to AWS services used by ECS tasks
+# ====================
+resource "aws_security_group" "vpce_sg" {
+  name        = "vpce_sg"
+  description = "Allow ECS tasks to reach interface VPC endpoints over TLS"
+  vpc_id      = module.my_vpc.vpc_id
+
+  tags = {
+    Name = "vpce-sg"
+  }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "vpce_allow_https_from_chat" {
+  security_group_id            = aws_security_group.vpce_sg.id
+  referenced_security_group_id = aws_security_group.chat_sg.id
+  ip_protocol                  = "tcp"
+  from_port                    = 443
+  to_port                      = 443
+}
+
+resource "aws_vpc_security_group_egress_rule" "vpce_allow_all" {
+  security_group_id = aws_security_group.vpce_sg.id
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1"
+}
+
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = module.my_vpc.vpc_id
+  service_name      = "com.amazonaws.${data.aws_region.current.name}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = module.my_vpc.private_route_table_ids
+}
+
+resource "aws_vpc_endpoint" "ecr_api" {
+  vpc_id              = module.my_vpc.vpc_id
+  service_name        = "com.amazonaws.${data.aws_region.current.name}.ecr.api"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = module.my_vpc.private_subnets
+  private_dns_enabled = true
+  security_group_ids  = [aws_security_group.vpce_sg.id]
+}
+
+resource "aws_vpc_endpoint" "ecr_dkr" {
+  vpc_id              = module.my_vpc.vpc_id
+  service_name        = "com.amazonaws.${data.aws_region.current.name}.ecr.dkr"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = module.my_vpc.private_subnets
+  private_dns_enabled = true
+  security_group_ids  = [aws_security_group.vpce_sg.id]
+}
+
+resource "aws_vpc_endpoint" "logs" {
+  vpc_id              = module.my_vpc.vpc_id
+  service_name        = "com.amazonaws.${data.aws_region.current.name}.logs"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = module.my_vpc.private_subnets
+  private_dns_enabled = true
+  security_group_ids  = [aws_security_group.vpce_sg.id]
+}
+
+resource "aws_vpc_endpoint" "ssm" {
+  vpc_id              = module.my_vpc.vpc_id
+  service_name        = "com.amazonaws.${data.aws_region.current.name}.ssm"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = module.my_vpc.private_subnets
+  private_dns_enabled = true
+  security_group_ids  = [aws_security_group.vpce_sg.id]
+}
+
+resource "aws_vpc_endpoint" "ssmmessages" {
+  vpc_id              = module.my_vpc.vpc_id
+  service_name        = "com.amazonaws.${data.aws_region.current.name}.ssmmessages"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = module.my_vpc.private_subnets
+  private_dns_enabled = true
+  security_group_ids  = [aws_security_group.vpce_sg.id]
+}
+
+resource "aws_vpc_endpoint" "ec2messages" {
+  vpc_id              = module.my_vpc.vpc_id
+  service_name        = "com.amazonaws.${data.aws_region.current.name}.ec2messages"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = module.my_vpc.private_subnets
+  private_dns_enabled = true
+  security_group_ids  = [aws_security_group.vpce_sg.id]
 }
 
 # ====================

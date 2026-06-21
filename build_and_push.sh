@@ -75,9 +75,6 @@ echo "==> Forcing ECS redeployment..."
 aws ecs update-service --cluster chat-cluster --service chat-backend-svc  --force-new-deployment --region "$REGION" > /dev/null
 aws ecs update-service --cluster chat-cluster --service chat-frontend-svc --force-new-deployment --region "$REGION" > /dev/null
 
-echo "==> Waiting for backend service to stabilise (this takes ~2 min)..."
-aws ecs wait services-stable --cluster chat-cluster --services chat-backend-svc --region "$REGION"
-
 # ─────────────────────────────────────────────
 # 8. Print URLs
 # ─────────────────────────────────────────────
