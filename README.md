@@ -1,4 +1,4 @@
-# Lab 12 - ECS Chat Application with RDS, CloudWatch, and Lambda Alerts
+# Lab 13 - ECS Chat Application with RDS, CloudWatch, and Lambda Alerts
 
 This laboratory deploys a chat application on AWS using Terraform. The stack runs the frontend and backend on ECS Fargate, stores chat data in PostgreSQL on RDS, exposes the app through a single Application Load Balancer, and sends both CloudWatch alarms and keyword-based chat alerts by e-mail.
 
