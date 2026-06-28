@@ -7,27 +7,15 @@ set -e
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 REGION="us-east-1"
 ECR_BASE="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
-REPO_URL="https://gonzalomorte:TOKEN_REMOVED@github.com/pwr-cloudprogramming/clprog2026-a04-mon1506.git"
-REPO_DIR="clprog2026-a04-mon1506"
-TAG="lab13" # Target for lab 13
+REPO_DIR="app"
 
 echo "==> Account: ${ACCOUNT_ID}"
 echo "==> ECR base: ${ECR_BASE}"
 
 # ==================
-# 1. Clone the private repository
+# 1. Use local app directory
 # ==================
-if [ -d "$REPO_DIR" ]; then
-  echo "==> Directory ${REPO_DIR} already exists, fetching latest tags..."
-  cd "$REPO_DIR"
-  git fetch origin --tags
-  git checkout "$TAG"
-  cd ..
-else
-  echo "==> Cloning specific tag from repository..."
-  git clone --branch "$TAG" --depth 1 "$REPO_URL" "$REPO_DIR"
-fi
-
+echo "==> Using local app directory..."
 cd "$REPO_DIR"
 
 # ─────────────────────────────────────────────
