@@ -455,7 +455,7 @@ resource "aws_ecs_task_definition" "backend_task" {
   container_definitions = jsonencode([
     {
       name      = "chat-backend"
-      image     = "${aws_ecr_repository.chat_backend.repository_url}:latest"
+      image     = "${aws_ecr_repository.chat_backend.repository_url}:v1"
       memory    = 512
       cpu       = 256
       essential = true
@@ -516,7 +516,7 @@ resource "aws_ecs_task_definition" "frontend_task" {
   container_definitions = jsonencode([
     {
       name      = "chat-frontend"
-      image     = "${aws_ecr_repository.chat_frontend.repository_url}:latest"
+      image     = "${aws_ecr_repository.chat_frontend.repository_url}:v1"
       memory    = 512
       cpu       = 256
       essential = true
@@ -631,4 +631,3 @@ resource "aws_lambda_function_url" "chat_alert_url" {
 output "lambda_alert_url" {
   value = aws_lambda_function_url.chat_alert_url.function_url
 }
-
