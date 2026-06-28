@@ -7,7 +7,7 @@ set -e
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 REGION="us-east-1"
 ECR_BASE="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
-REPO_DIR="app"
+REPO_DIR="../chat-app"
 
 echo "==> Account: ${ACCOUNT_ID}"
 echo "==> ECR base: ${ECR_BASE}"
