@@ -55,7 +55,6 @@ aws-chat-app/
 └── aws-infra/
     ├── main.tf           # All AWS resources
     ├── variables.tf      # Input variables
-    ├── init.sql          # DB schema initialisation
     ├── lambda/
     │   └── alert.py      # Keyword alert Lambda
     └── build_and_push.sh # Build images & push to ECR
@@ -97,7 +96,22 @@ git clone https://github.com/gonzalomorte/aws-chat-app.git
 cd aws-chat-app
 ```
 
-### 4. Provision the infrastructure with Terraform
+### 4. Create a terraform.tfvars file
+
+Terraform requires several input variables. Create a `terraform.tfvars` file inside `aws-infra/` so you are not prompted on every command (including `destroy`):
+
+```hcl
+# aws-infra/terraform.tfvars  — DO NOT commit this file
+db_username           = "chatuser"
+db_password           = "YourSecurePassword"
+notification_email    = "you@example.com"
+alert_email           = "you@example.com"
+cpu_high_threshold    = 80
+```
+
+> **Important:** `terraform.tfvars` is already listed in `.gitignore`. Never commit this file — it contains your database password.
+
+### 5. Provision the infrastructure with Terraform
 
 Terraform will create the VPC, subnets, VPC endpoints, security groups, RDS instance, ECR repositories, ECS cluster, ALB, Lambda, and all CloudWatch alarms.
 
@@ -106,15 +120,6 @@ cd aws-infra
 terraform init
 terraform apply
 ```
-
-Terraform will prompt you for the following variables:
-
-| Variable | Description | Example |
-|---|---|---|
-| `db_password` | RDS master password (min 8 chars) | `MyP@ssw0rd` |
-| `notification_email` | Email for CloudWatch alarm notifications | `you@example.com` |
-| `cpu_high_threshold` | CPU % that triggers the high-CPU alarm | `80` |
-| `alert_email` | Email for chat keyword alerts via Lambda/SNS | `you@example.com` |
 
 > **Check your inbox** — AWS SNS will send a confirmation email to both addresses. You must click **Confirm subscription** before alerts can be delivered.
 
@@ -126,21 +131,6 @@ ecr_backend_url     = "<account>.dkr.ecr.us-east-1.amazonaws.com/chat-backend"
 ecr_frontend_url    = "<account>.dkr.ecr.us-east-1.amazonaws.com/chat-frontend"
 rds_host            = "chat-db.<xyz>.us-east-1.rds.amazonaws.com"
 lambda_alert_url    = "https://<id>.lambda-url.us-east-1.on.aws/"
-```
-
-### 5. Initialise the database schema
-
-The `init.sql` file creates the required tables. Run it from inside the VPC using the AWS CLI SSM Session Manager or from any ECS task that has access to the RDS instance.
-
-The easiest approach on Cloud9 is to temporarily install the PostgreSQL client and connect via a bastion — or use the ECS Exec feature once a task is running:
-
-```bash
-# Install psql client on Cloud9 (Amazon Linux 2023)
-sudo dnf install -y postgresql15
-
-# Connect using the RDS host from Terraform output
-psql -h <rds_host> -U chatuser -d chatdb -f aws-infra/init.sql
-# Enter the db_password you set during terraform apply when prompted
 ```
 
 ### 6. Build the Docker images and push them to ECR
@@ -181,18 +171,14 @@ terraform output app_url
 
 ## Terraform Variables Reference
 
-All variables are defined in `aws-infra/variables.tf`. You can also provide them via a `terraform.tfvars` file to avoid being prompted each time:
+All variables are defined in `aws-infra/variables.tf`.
 
-```hcl
-# aws-infra/terraform.tfvars  — DO NOT commit this file
-db_username           = "chatuser"
-db_password           = "YourSecurePassword"
-notification_email    = "you@example.com"
-alert_email           = "you@example.com"
-cpu_high_threshold    = 80
-```
-
-Add `terraform.tfvars` to `.gitignore` to avoid accidentally committing credentials.
+| Variable | Description | Example |
+|---|---|---|
+| `db_password` | RDS master password (min 8 chars) | `MyP@ssw0rd` |
+| `notification_email` | Email for CloudWatch alarm notifications | `you@example.com` |
+| `cpu_high_threshold` | CPU % that triggers the high-CPU alarm | `80` |
+| `alert_email` | Email for chat keyword alerts via Lambda/SNS | `you@example.com` |
 
 ## Tearing Down
 
@@ -202,6 +188,8 @@ To destroy all AWS resources and avoid ongoing charges:
 cd aws-infra
 terraform destroy
 ```
+
+Terraform will read the variables from your `terraform.tfvars` file automatically — no manual input required as long as the file is present.
 
 > **Warning:** This will delete the RDS instance, all ECS services, the ALB, ECR repositories (including all pushed images), and all VPC resources. The operation is irreversible.
 
