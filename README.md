@@ -9,9 +9,9 @@ Internet
    │
    ▼
 [ALB :80]
-   ├── /           → ECS Fargate — Frontend (SvelteKit :3000)   ┐
+   ├── /           → ECS Fargate — Frontend (SvelteKit :3000)    ┐
    └── /chat/*     → ECS Fargate — Backend  (Spring Boot :5000)  ├── Private subnets
-                              │                                   │
+                              │                                  │
                          [RDS PostgreSQL]  ──────────────────────┘
                               │
                          [Lambda]  →  [SNS]  →  Email alerts
